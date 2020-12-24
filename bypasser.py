@@ -24,11 +24,11 @@ GPIO.setup(GPIO_ECHO, GPIO.IN)
 #calibration variables in centimeters
 calibration_distance = 0 #centimeters
 calibration_distance_tolerance = 10 #centimeters
-calibration_points_required = 60 #tracking units
+calibration_points_required = 10 #tracking units
 calibration_points_list = []
 
 #configuration
-STORE_BYPASSER_ID = "dist1"
+STORE_BYPASSER_ID = "bypasser_unit_1"
 bypasser_detected = False
 ticker = 0.1 #seconds
 ticker_heartbeat = 60 #seconds
@@ -89,11 +89,12 @@ def detect_bypasser(tracked_distance, log_destination, timestamp_string):
   global ticker
   global ticker_bypasser
   global bypasser_loop_value
-  if tracked_distance < (calibration_distance + calibration_distance_tolerance):
-    #set bypasser_detected variable to true to start bypasser ticker events
-    bypasser_detected = True
-    #only tick events on first ticker hit within the ticker of the bypasser
-    if bypasser_loop_value == ticker_bypasser:
+  #check for bypasser based on distance tolerance
+  if tracked_distance < (calibration_distance - calibration_distance_tolerance):
+    if bypasser_detected == False:  
+      #set bypasser_detected variable to true to start bypasser ticker events
+      bypasser_detected = True
+      #only tick events on first ticker hit within the ticker of the bypasser
       write_to_log(log_destination, [timestamp_string, STORE_BYPASSER_ID, "bypasser", tracked_distance])
       print("bypasser detected!")
       #count down loop value untill 0 before next bypasser ticker
@@ -101,9 +102,15 @@ def detect_bypasser(tracked_distance, log_destination, timestamp_string):
 
     else:
       #count down loop value untill 0 before next bypasser ticker
-      bypasser_loop_value = bypasser_loop_value - ticker
+      if bypasser_loop_value == ticker_bypasser:  
+        write_to_log(log_destination, [timestamp_string, STORE_BYPASSER_ID, "bypasser", tracked_distance])
+        bypasser_loop_value = bypasser_loop_value - ticker
+      
+      else:
+        bypasser_loop_value = bypasser_loop_value - ticker    
+          
+      #reset bypasser ticker   
       if bypasser_loop_value == 0:
-        #reset bypasser ticker
         bypasser_loop_value = ticker_bypasser
     
   else:
@@ -111,12 +118,12 @@ def detect_bypasser(tracked_distance, log_destination, timestamp_string):
     bypasser_detected = False
     #reset bypasser loop value to initial tickervalue
     bypasser_loop_value = ticker_bypasser
-    print("no bypasser detected")
+    #print("no bypasser detected")
 
   return bypasser_detected
 
 #calibration function
-def calibrate_distance(tracked_distance):
+def calibrate_distance(tracked_distance, log_destination, timestamp_string):
   global calibration_points_list
   global calibration_points_required
   global calibration_distance_tolerance
@@ -128,7 +135,7 @@ def calibrate_distance(tracked_distance):
       
   else:
     #set new calibration distance
-    print("calibration points collected, start calibration process...")
+    #print("calibration points collected, start calibration process...")
     calibration_points_average = sum(calibration_points_list) / len(calibration_points_list)
     calibration_valid = True
     #control for outliers in calibration_points
@@ -143,7 +150,7 @@ def calibrate_distance(tracked_distance):
       #set new calibration distance default
       calibration_distance = calibration_points_average
       print("new calibration distance: ", calibration_points_average)
-      write_to_log()
+      write_to_log(log_destination, [timestamp_string, STORE_BYPASSER_ID, "calibration_distance", calibration_points_average])
       #reset calibration points list
       calibration_points_list = []
       return calibration_points_average
@@ -167,6 +174,9 @@ if __name__ == '__main__':
       ###distance process in ticker
       #DEFAULT
       dist = retrieve_distance()
+      if calibration_distance == 0:
+          calibration_distance = dist
+          print("initial calibration distance: ", dist)
       #print ("tracked distance = %.1f cm" % dist)
       
       ###anomaly process in ticker
@@ -191,8 +201,8 @@ if __name__ == '__main__':
         #use the calibration loop value to avoid calibrating too fast!
         calibration_loop_value = calibration_loop_value - ticker
       else:
-        calibrate_distance(dist)
-        write_to_log(log_destination, [timestamp_string, STORE_BYPASSER_ID, "calibration_distance", calibrate_distance])
+        cali = calibrate_distance(dist, log_destination, timestamp_string)
+        #write_to_log(log_destination, [timestamp_string, STORE_BYPASSER_ID, "calibration_distance", cali])
         #reset calibration interval to the ticker of the calibration
         calibration_loop_value = ticker_calibration
 
@@ -204,3 +214,4 @@ if __name__ == '__main__':
   except KeyboardInterrupt:
       print("Tracking stopped")
       GPIO.cleanup()
+
